@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# claude-project-profile — Switch between Claude Code project-level configuration profiles
+# https://github.com/yarikleto/claude-project-profile
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ─── Load modules ──────────────────────────────────────────
+source "$SCRIPT_DIR/lib/output.sh"
+source "$SCRIPT_DIR/lib/config.sh"
+source "$SCRIPT_DIR/lib/includes.sh"
+source "$SCRIPT_DIR/lib/git.sh"
+source "$SCRIPT_DIR/lib/state.sh"
+source "$SCRIPT_DIR/lib/files.sh"
+source "$SCRIPT_DIR/commands/profile.sh"
+source "$SCRIPT_DIR/commands/info.sh"
+source "$SCRIPT_DIR/commands/history.sh"
+source "$SCRIPT_DIR/commands/ui.sh"
+
+# ─── Dispatch ──────────────────────────────────────────────
+cmd="${1:-help}"
+shift 2>/dev/null || true
+
+case "$cmd" in
+  new)            cmd_new "$@" ;;
+  fork)           cmd_fork "$@" ;;
+  use|switch)     cmd_use "$@" ;;
+  save)           cmd_save "$@" ;;
+  deactivate|off) cmd_deactivate "$@" ;;
+  list|ls)        cmd_list "$@" ;;
+  current)        cmd_current "$@" ;;
+  show|info)      cmd_show "$@" ;;
+  edit)           cmd_edit "$@" ;;
+  delete|rm)      cmd_delete "$@" ;;
+  history|log)    cmd_history "$@" ;;
+  diff)           cmd_diff "$@" ;;
+  restore)        cmd_restore "$@" ;;
+  statusline)     cmd_statusline "$@" ;;
+  version|-v|--version) echo "claude-project-profile $VERSION" ;;
+  help|--help|-h)
+    echo -e "${BOLD}claude-project-profile${NC} ${DIM}v$VERSION${NC} — Switch between Claude Code project-level profiles
+
+${CYAN}${BOLD}USAGE${NC}
+  claude-project-profile ${DIM}<command> [options]${NC}
+
+${CYAN}${BOLD}COMMANDS${NC}
+  ${BOLD}new${NC} ${DIM}<name>${NC}                    Create a clean empty profile
+  ${BOLD}fork${NC} ${DIM}<name>${NC}                   Copy current state into a new profile
+  ${BOLD}use${NC} ${DIM}<name>${NC}                    Switch to a profile
+  ${BOLD}list${NC}                          List all profiles
+  ${BOLD}current${NC}                       Show active profile name
+  ${BOLD}show${NC} ${DIM}[name]${NC}                   Show profile contents
+  ${BOLD}edit${NC} ${DIM}[name]${NC}                   Open profile in editor
+  ${BOLD}delete${NC} ${DIM}<name> [-f]${NC}            Delete a profile
+  ${BOLD}deactivate${NC} ${DIM}[--keep]${NC}           Turn off profiles, restore original
+                                ${DIM}--keep: detach without restoring backup${NC}
+
+${CYAN}${BOLD}HISTORY${NC}
+  ${BOLD}save${NC} ${DIM}[name] [-m message]${NC}      Save & commit current state
+  ${BOLD}history${NC} ${DIM}[name]${NC}                View change history (git log)
+  ${BOLD}diff${NC} ${DIM}[name] [commit|date]${NC}     Show changes (unsaved or since ref)
+  ${BOLD}restore${NC} ${DIM}[name] <commit|date>${NC}  Restore profile to a point in time
+
+${CYAN}${BOLD}UI INTEGRATION${NC}
+  ${BOLD}statusline${NC} ${DIM}install|uninstall${NC}   Add/remove profile from Claude Code status
+
+${CYAN}${BOLD}OTHER${NC}
+  ${BOLD}version${NC}                       Print version
+  ${BOLD}help${NC}                          Show this help
+
+${CYAN}${BOLD}WHAT GETS SWITCHED${NC}
+  Defined in ${BOLD}.claude-profiles/.include${NC} (one path per line)
+  Default: ${BOLD}.claude/${NC} and ${BOLD}CLAUDE.md${NC}
+
+${CYAN}${BOLD}EXAMPLES${NC}
+  ${DIM}\$${NC} claude-project-profile fork default       ${DIM}# Save current project setup${NC}
+  ${DIM}\$${NC} claude-project-profile new code-review    ${DIM}# Clean empty profile${NC}
+  ${DIM}\$${NC} claude-project-profile use code-review    ${DIM}# Switch to it${NC}
+  ${DIM}\$${NC} claude-project-profile list               ${DIM}# See all profiles${NC}
+
+${CYAN}${BOLD}FILES${NC}
+  Profiles dir:  ${BOLD}<project-root>/.claude-profiles/${NC}
+"
+    ;;
+  *)
+    err "Unknown command: $cmd"
+    echo "Run 'claude-project-profile help' for usage"
+    exit 1
+    ;;
+esac
