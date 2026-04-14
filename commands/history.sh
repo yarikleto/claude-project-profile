@@ -115,14 +115,24 @@ cmd_restore() {
     _save_current_to "$profile_dir" "Auto-save before restore to $ref"
   fi
 
+  # Create a safety snapshot so we can roll back if checkout fails
+  local backup_tag="_restore_backup_$$"
+  git -C "$profile_dir" tag "$backup_tag" HEAD 2>/dev/null
+
   if ! git -C "$profile_dir" rm -rf --quiet . 2>/dev/null; then
+    git -C "$profile_dir" tag -d "$backup_tag" 2>/dev/null || true
     err "Failed to clean working tree for $ref — profile unchanged"
     exit 1
   fi
   if ! git -C "$profile_dir" checkout "$resolved" -- . 2>/dev/null; then
-    err "Failed to checkout $ref — profile unchanged"
+    # Checkout failed — roll back to the safety snapshot
+    git -C "$profile_dir" checkout "$backup_tag" -- . 2>/dev/null || true
+    git -C "$profile_dir" tag -d "$backup_tag" 2>/dev/null || true
+    err "Failed to checkout $ref — restore aborted, profile rolled back"
     exit 1
   fi
+
+  git -C "$profile_dir" tag -d "$backup_tag" 2>/dev/null || true
   _git_commit "$profile_dir" "Restored to $ref"
 
   if [[ "$(get_current)" == "$name" ]]; then

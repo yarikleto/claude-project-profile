@@ -219,3 +219,47 @@ load test_helper
   [ -d "$PROJECT_DIR/.claude-profiles/.pre-profiles-backup" ]
   [ -f "$PROJECT_DIR/.claude-profiles/.pre-profiles-backup/.claude/settings.json" ]
 }
+
+@test "restore rollback: failed checkout does not destroy profile" {
+  # 1. Create a profile with some content and history
+  run_cli fork myprofile
+  [ "$status" -eq 0 ]
+
+  echo '{"setting": "v1"}' > "$PROJECT_DIR/.claude/settings.json"
+  run_cli save -m "Version 1"
+  [ "$status" -eq 0 ]
+
+  echo '{"setting": "v2"}' > "$PROJECT_DIR/.claude/settings.json"
+  run_cli save -m "Version 2"
+  [ "$status" -eq 0 ]
+
+  # Get the first non-HEAD commit (the "Version 1" commit)
+  local profile_dir="$PROJECT_DIR/.claude-profiles/myprofile"
+  local old_commit
+  old_commit="$(git -C "$profile_dir" log --format='%H' --skip=1 -1)"
+
+  # Snapshot current profile contents before the restore attempt
+  local settings_before
+  settings_before="$(cat "$profile_dir/.claude/settings.json")"
+
+  # 2. Corrupt the tree object of the old commit so checkout will fail
+  #    but rev-parse and git-log still succeed (commit object is intact)
+  local tree_hash
+  tree_hash="$(git -C "$profile_dir" cat-file -p "$old_commit" | grep tree | awk '{print $2}')"
+  local obj_path="$profile_dir/.git/objects/${tree_hash:0:2}/${tree_hash:2}"
+  chmod u+w "$obj_path"
+  echo "CORRUPT" > "$obj_path"
+
+  # 3. Attempt restore — should fail but NOT destroy the profile
+  run_cli restore myprofile "$old_commit"
+  [ "$status" -ne 0 ]
+
+  # 4. Assert profile content is still intact (not destroyed)
+  [ -f "$profile_dir/.claude/settings.json" ]
+  local settings_after
+  settings_after="$(cat "$profile_dir/.claude/settings.json")"
+  [ "$settings_before" = "$settings_after" ]
+
+  # 5. Verify the error message does NOT say "unchanged" (it was modified and rolled back)
+  [[ "$output" != *"profile unchanged"* ]]
+}
