@@ -33,6 +33,19 @@ $ claude-project-profile list
 
 ## Install
 
+### Homebrew (recommended)
+
+```bash
+brew tap yarikleto/claude-project-profile
+brew install claude-project-profile
+```
+
+### One-liner
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yarikleto/claude-project-profile/main/remote-install.sh | bash
+```
+
 ### From source
 
 ```bash
@@ -40,15 +53,19 @@ git clone https://github.com/yarikleto/claude-project-profile.git
 cd claude-project-profile && bash install.sh
 ```
 
-Open a new shell to load tab completion: `exec zsh` or `exec bash`.
+Open a new shell once to load tab completion: `exec zsh` or `exec bash`.
 
 ### Update
 
 ```bash
+# Homebrew
+brew upgrade claude-project-profile
+
+# From source
 cd claude-project-profile && git pull && bash install.sh
 ```
 
-Your profiles are never touched — updates only replace the CLI binary and modules.
+Your profiles and config are never touched — updates only replace the CLI binary and modules.
 
 ## Quick start
 
@@ -209,7 +226,13 @@ Yes. Edit `.claude-profiles/.include` to add or remove files. Supports glob patt
 
 ```bash
 claude-project-profile deactivate   # restore original state in each project
+
+# Homebrew
+brew uninstall claude-project-profile
+
+# From source
 bash uninstall.sh                   # remove the CLI
+
 rm -rf <project>/.claude-profiles   # remove profile data per project
 ```
 </details>
