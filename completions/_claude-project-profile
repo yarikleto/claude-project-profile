@@ -1,0 +1,62 @@
+#compdef claude-project-profile
+
+_claude-project-profile() {
+  local -a commands
+  commands=(
+    'new:Create a clean empty profile'
+    'fork:Copy current state into a new profile'
+    'use:Switch to a profile'
+    'list:List all profiles'
+    'current:Show active profile name'
+    'show:Show profile contents'
+    'edit:Open profile in editor'
+    'delete:Delete a profile'
+    'deactivate:Turn off profiles, restore original'
+    'save:Save & commit current state'
+    'history:View change history'
+    'diff:Show changes'
+    'restore:Restore profile to a point in time'
+    'statusline:Add/remove profile from Claude Code status line'
+    'version:Print version'
+    'help:Show help'
+  )
+
+  _arguments -C \
+    '1:command:->cmds' \
+    '*::arg:->args'
+
+  case "$state" in
+    cmds)
+      _describe -t commands 'command' commands
+      ;;
+    args)
+      local profiles_dir
+      profiles_dir="$(git rev-parse --show-toplevel 2>/dev/null)/.claude-profiles"
+      case "$words[1]" in
+        use|show|edit|delete|history|diff|restore|save)
+          if [[ -d "$profiles_dir" ]]; then
+            local -a profiles
+            profiles=("${(@f)$(command ls -1 "$profiles_dir" 2>/dev/null | grep -v '^\.')}")
+            _describe -t profiles 'profile' profiles
+          fi
+          ;;
+        deactivate)
+          _arguments '--keep[Detach without restoring backup]'
+          ;;
+        delete)
+          local -a profiles
+          if [[ -d "$profiles_dir" ]]; then
+            profiles=("${(@f)$(command ls -1 "$profiles_dir" 2>/dev/null | grep -v '^\.')}")
+            _describe -t profiles 'profile' profiles
+          fi
+          _arguments '-f[Force delete without confirmation]'
+          ;;
+        statusline)
+          _arguments '1:action:(install uninstall)'
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_claude-project-profile "$@"
