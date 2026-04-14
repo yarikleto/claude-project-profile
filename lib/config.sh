@@ -1,6 +1,6 @@
 # config.sh — Constants and path resolution (project-level)
 
-VERSION="1.0.0"
+VERSION="1.0.1"
 
 # ─── Project root detection ────────────────────────────────
 _detect_project_root() {
