@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/logo.svg" alt="claude-project-profile" width="560">
+<img src="docs/logo.svg" alt="claude-project-profile" width="640">
 
 <br>
 
