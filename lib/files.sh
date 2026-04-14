@@ -15,10 +15,29 @@ _assert_path_within() {
     return 1
   }
   local target="$base/$rel"
-  # Resolve the real path as far as possible
-  if [[ -e "$target" ]]; then
+  # Resolve the real path as far as possible, including symlinks on the final component
+  if [[ -e "$target" || -L "$target" ]]; then
     local real_target
-    real_target="$(cd "$(dirname "$target")" 2>/dev/null && pwd -P)/$(basename "$target")"
+    if [[ -d "$target" && ! -L "$target" ]]; then
+      # Real directory — resolve via cd
+      real_target="$(cd "$target" 2>/dev/null && pwd -P)"
+    elif [[ -L "$target" ]]; then
+      # Symlink — fully resolve it (follow all symlinks)
+      # Use readlink -f (available on macOS and Linux) to resolve the entire chain
+      real_target="$(readlink -f "$target" 2>/dev/null)" || {
+        # Fallback: resolve the symlink manually
+        local link_dest
+        link_dest="$(readlink "$target" 2>/dev/null)" || link_dest="$target"
+        if [[ "$link_dest" == /* ]]; then
+          real_target="$link_dest"
+        else
+          real_target="$(cd "$(dirname "$target")" 2>/dev/null && pwd -P)/$link_dest"
+        fi
+      }
+    else
+      # Regular file — resolve the parent directory and keep the basename
+      real_target="$(cd "$(dirname "$target")" 2>/dev/null && pwd -P)/$(basename "$target")"
+    fi
     if [[ "$real_target" != "$real_base" && "$real_target" != "$real_base/"* ]]; then
       err "SAFETY: '$rel' resolves outside allowed directory — refusing to proceed"
       return 1

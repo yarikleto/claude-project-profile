@@ -244,3 +244,35 @@ load test_helper
   [ "$status" -ne 0 ]
   [[ "$output" == *"ymlink"* ]]
 }
+
+# ─── Symlink escape via live .claude pointing outside project ────────────
+
+@test "SECURITY: symlink .claude pointing outside project must not exfiltrate files into profile via fork (live)" {
+  # Create a sensitive directory outside the project with a secret file
+  mkdir -p "$TEST_DIR/external-dir"
+  echo "TOP SECRET DATA" > "$TEST_DIR/external-dir/secret.txt"
+  echo '{"evil": true}' > "$TEST_DIR/external-dir/settings.json"
+
+  # Replace .claude with a symlink to the external directory
+  rm -rf "$PROJECT_DIR/.claude"
+  ln -sf "$TEST_DIR/external-dir" "$PROJECT_DIR/.claude"
+
+  # Attempt to fork — this should either fail or not copy external content
+  run_cli fork default
+
+  # The external secret must NOT appear in the profile directory
+  [ ! -f "$PROJECT_DIR/.claude-profiles/default/secret.txt" ]
+  [ ! -f "$PROJECT_DIR/.claude-profiles/default/.claude/secret.txt" ]
+
+  # If fork succeeded, the profile must not contain the external settings
+  if [ "$status" -eq 0 ] && [ -f "$PROJECT_DIR/.claude-profiles/default/.claude/settings.json" ]; then
+    # The content must not be from the external directory
+    local content
+    content="$(cat "$PROJECT_DIR/.claude-profiles/default/.claude/settings.json")"
+    [[ "$content" != *"evil"* ]]
+  fi
+
+  # Original external file must be untouched
+  [ -f "$TEST_DIR/external-dir/secret.txt" ]
+  [[ "$(cat "$TEST_DIR/external-dir/secret.txt")" == "TOP SECRET DATA" ]]
+}

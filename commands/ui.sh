@@ -70,12 +70,23 @@ _json_remove_key() { _json_transform "$1" delete "$2"; }
 cmd_statusline() {
   local action="${1:-install}"
   _ensure_paths
+  ensure_dir
 
   local claude_dir="$PROJECT_ROOT/.claude"
   local statusline_script="$PROFILES_DIR/statusline.sh"
 
   case "$action" in
     install)
+      # Refuse to follow symlinks for .claude directory or settings.json
+      if [[ -L "$claude_dir" ]]; then
+        err "Refusing to write: $claude_dir is a symlink"
+        exit 1
+      fi
+      if [[ -L "$claude_dir/settings.json" ]]; then
+        err "Refusing to write: $claude_dir/settings.json is a symlink"
+        exit 1
+      fi
+
       if [[ -L "$statusline_script" ]]; then
         err "Refusing to overwrite symlink at $statusline_script"
         exit 1
