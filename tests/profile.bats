@@ -2,6 +2,34 @@
 
 load test_helper
 
+make_restore_commit_failure_fake() {
+  local bin_dir="$1"
+  local real_git
+  real_git="$(command -v git)"
+  mkdir -p "$bin_dir"
+  cat > "$bin_dir/git" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+args=("\$@")
+cmd_index=0
+git_dir=""
+if (( \${#args[@]} >= 3 )) && [[ "\${args[0]}" == "-C" ]]; then
+  git_dir="\${args[1]}"
+  cmd_index=2
+fi
+
+if (( \${#args[@]} > cmd_index )) \
+  && [[ "\${args[\$cmd_index]}" == "commit" ]] \
+  && [[ "\$git_dir" == *"/.restore-tmp."* ]]; then
+  exit 1
+fi
+
+exec "$real_git" "\$@"
+EOF
+  chmod +x "$bin_dir/git"
+}
+
 @test "version prints version string" {
   run_cli version
   [ "$status" -eq 0 ]
@@ -220,6 +248,40 @@ load test_helper
   [ -f "$PROJECT_DIR/.claude-profiles/.pre-profiles-backup/.claude/settings.json" ]
 }
 
+@test "restore active profile reloads exact target tree and deletes later files" {
+  run_cli fork exact
+  [ "$status" -eq 0 ]
+
+  echo '{"setting": "v1"}' > "$PROJECT_DIR/.claude/settings.json"
+  rm -f "$PROJECT_DIR/.claude/extra.json"
+  run_cli save -m "Version 1"
+  [ "$status" -eq 0 ]
+
+  local profile_dir="$PROJECT_DIR/.claude-profiles/exact"
+  local target_commit target_tree restored_tree
+  target_commit="$(git -C "$profile_dir" rev-parse HEAD)"
+  target_tree="$(git -C "$profile_dir" rev-parse "${target_commit}^{tree}")"
+
+  echo '{"setting": "v2"}' > "$PROJECT_DIR/.claude/settings.json"
+  echo '{"later": true}' > "$PROJECT_DIR/.claude/extra.json"
+  run_cli save -m "Version 2"
+  [ "$status" -eq 0 ]
+  [ -f "$profile_dir/.claude/extra.json" ]
+
+  run_cli restore exact "$target_commit"
+  [ "$status" -eq 0 ]
+
+  [ ! -f "$profile_dir/.claude/extra.json" ]
+  [ ! -f "$PROJECT_DIR/.claude/extra.json" ]
+  [[ "$(cat "$profile_dir/.claude/settings.json")" == *'"setting": "v1"'* ]]
+  [[ "$(cat "$PROJECT_DIR/.claude/settings.json")" == *'"setting": "v1"'* ]]
+
+  restored_tree="$(git -C "$profile_dir" rev-parse HEAD^{tree})"
+  [ "$restored_tree" = "$target_tree" ]
+  [ -z "$(git -C "$profile_dir" status --porcelain --untracked-files=all)" ]
+  assert_no_restore_tmp_dirs
+}
+
 @test "restore rollback: failed checkout does not destroy profile" {
   # 1. Create a profile with some content and history
   run_cli fork myprofile
@@ -260,6 +322,118 @@ load test_helper
   settings_after="$(cat "$profile_dir/.claude/settings.json")"
   [ "$settings_before" = "$settings_after" ]
 
-  # 5. Verify the error message does NOT say "unchanged" (it was modified and rolled back)
-  [[ "$output" != *"profile unchanged"* ]]
+  # 5. Verify the restore failed before mutating the original profile
+  [[ "$output" == *"profile unchanged"* ]]
+  assert_no_restore_tmp_dirs
+}
+
+@test "restore rollback preserves dirty tracked edits in inactive profile" {
+  run_cli fork manual
+  [ "$status" -eq 0 ]
+
+  echo '{"setting": "v1"}' > "$PROJECT_DIR/.claude/settings.json"
+  run_cli save -m "Version 1"
+  [ "$status" -eq 0 ]
+
+  echo '{"setting": "v2"}' > "$PROJECT_DIR/.claude/settings.json"
+  run_cli save -m "Version 2"
+  [ "$status" -eq 0 ]
+
+  local profile_dir="$PROJECT_DIR/.claude-profiles/manual"
+  local target_commit
+  target_commit="$(git -C "$profile_dir" rev-parse HEAD~1)"
+
+  run_cli new other
+  [ "$status" -eq 0 ]
+
+  echo '{"setting": "manual inactive edit"}' > "$profile_dir/.claude/settings.json"
+  local dirty_before
+  dirty_before="$(cat "$profile_dir/.claude/settings.json")"
+  [ -n "$(git -C "$profile_dir" status --porcelain -- .claude/settings.json)" ]
+
+  local fake_bin="$TEST_DIR/fake-bin"
+  make_git_checkout_failure_fake "$fake_bin"
+  export CPP_FAKE_GIT_CHECKOUT_FAILURE_MODE=target
+  export PATH="$fake_bin:$PATH"
+
+  run_cli restore manual "$target_commit"
+  [ "$status" -ne 0 ]
+
+  [ -f "$profile_dir/.claude/settings.json" ]
+  [ "$(cat "$profile_dir/.claude/settings.json")" = "$dirty_before" ]
+  [ -n "$(git -C "$profile_dir" status --porcelain -- .claude/settings.json)" ]
+  assert_no_restore_tmp_dirs
+}
+
+@test "restore rollback leaves profile clean when rollback checkout fails" {
+  run_cli fork rollback
+  [ "$status" -eq 0 ]
+
+  echo '{"setting": "v1"}' > "$PROJECT_DIR/.claude/settings.json"
+  run_cli save -m "Version 1"
+  [ "$status" -eq 0 ]
+
+  echo '{"setting": "v2"}' > "$PROJECT_DIR/.claude/settings.json"
+  run_cli save -m "Version 2"
+  [ "$status" -eq 0 ]
+
+  local profile_dir="$PROJECT_DIR/.claude-profiles/rollback"
+  local target_commit
+  target_commit="$(git -C "$profile_dir" rev-parse HEAD~1)"
+
+  local settings_before
+  settings_before="$(cat "$profile_dir/.claude/settings.json")"
+  [ -z "$(git -C "$profile_dir" status --porcelain --untracked-files=all)" ]
+
+  local fake_bin="$TEST_DIR/fake-bin"
+  make_git_checkout_failure_fake "$fake_bin"
+  export CPP_FAKE_GIT_CHECKOUT_FAILURE_MODE=all
+  export PATH="$fake_bin:$PATH"
+
+  run_cli restore rollback "$target_commit"
+  [ "$status" -ne 0 ]
+
+  [ -f "$profile_dir/.claude/settings.json" ]
+  [ "$(cat "$profile_dir/.claude/settings.json")" = "$settings_before" ]
+  [ -z "$(git -C "$profile_dir" status --porcelain --untracked-files=all)" ]
+  assert_no_restore_tmp_dirs
+}
+
+@test "restore does not replace profile when restored tree cannot be committed" {
+  run_cli fork verified
+  [ "$status" -eq 0 ]
+
+  echo '{"setting": "v1"}' > "$PROJECT_DIR/.claude/settings.json"
+  run_cli save -m "Version 1"
+  [ "$status" -eq 0 ]
+
+  echo '{"setting": "v2"}' > "$PROJECT_DIR/.claude/settings.json"
+  run_cli save -m "Version 2"
+  [ "$status" -eq 0 ]
+
+  run_cli new other
+  [ "$status" -eq 0 ]
+
+  local profile_dir="$PROJECT_DIR/.claude-profiles/verified"
+  local target_commit
+  target_commit="$(git -C "$profile_dir" rev-parse HEAD~1)"
+
+  local settings_before head_before
+  settings_before="$(cat "$profile_dir/.claude/settings.json")"
+  head_before="$(git -C "$profile_dir" rev-parse HEAD)"
+  [ -z "$(git -C "$profile_dir" status --porcelain --untracked-files=all)" ]
+
+  local fake_bin="$TEST_DIR/fake-bin"
+  make_restore_commit_failure_fake "$fake_bin"
+  export PATH="$fake_bin:$PATH"
+
+  run_cli restore verified "$target_commit"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"profile unchanged"* ]]
+
+  [ -f "$profile_dir/.claude/settings.json" ]
+  [ "$(cat "$profile_dir/.claude/settings.json")" = "$settings_before" ]
+  [ "$(git -C "$profile_dir" rev-parse HEAD)" = "$head_before" ]
+  [ -z "$(git -C "$profile_dir" status --porcelain --untracked-files=all)" ]
+  assert_no_restore_tmp_dirs
 }

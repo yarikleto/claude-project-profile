@@ -90,6 +90,59 @@ _diff_since_ref() {
   git -C "$profile_dir" diff "$resolved"..HEAD --
 }
 
+_copy_profile_worktree() {
+  local src="$1" dst="$2"
+  mkdir -p "$dst" || return 1
+  cp -pR "$src/." "$dst/" || return 1
+}
+
+_abort_restore_unchanged() {
+  local tmp_dir="$1" message="$2"
+  rm -rf "$tmp_dir"
+  err "$message — profile unchanged"
+  exit 1
+}
+
+_replace_profile_with_restored_copy() {
+  local profile_dir="$1" work_dir="$2" tmp_dir="$3"
+  local original_dir="$tmp_dir/original"
+
+  if ! mv "$profile_dir" "$original_dir"; then
+    _abort_restore_unchanged "$tmp_dir" "Failed to replace profile after restore"
+  fi
+
+  if ! mv "$work_dir" "$profile_dir"; then
+    if mv "$original_dir" "$profile_dir" 2>/dev/null; then
+      _abort_restore_unchanged "$tmp_dir" "Failed to replace profile after restore"
+    fi
+    err "Failed to replace profile after restore — original profile left at $original_dir"
+    exit 1
+  fi
+
+  rm -rf "$original_dir"
+}
+
+_commit_and_verify_restore() {
+  local work_dir="$1" resolved="$2" message="$3"
+  local restored_tree target_tree
+
+  if ! git -C "$work_dir" diff --quiet --; then
+    return 1
+  fi
+
+  git -C "$work_dir" add -A || return 1
+  if ! git -C "$work_dir" diff --cached --quiet --; then
+    git -C "$work_dir" commit -q -m "$message" 2>/dev/null || return 1
+  fi
+
+  git -C "$work_dir" diff --quiet -- || return 1
+  git -C "$work_dir" diff --cached --quiet -- || return 1
+
+  restored_tree="$(git -C "$work_dir" rev-parse HEAD^{tree} 2>/dev/null)" || return 1
+  target_tree="$(git -C "$work_dir" rev-parse "${resolved}^{tree}" 2>/dev/null)" || return 1
+  [[ "$restored_tree" == "$target_tree" ]]
+}
+
 cmd_restore() {
   _parse_name_ref "$@"
   local name="${_PARSED_NAME:-$(get_current)}"
@@ -115,25 +168,28 @@ cmd_restore() {
     _save_current_to "$profile_dir" "Auto-save before restore to $ref"
   fi
 
-  # Create a safety snapshot so we can roll back if checkout fails
-  local backup_tag="_restore_backup_$$"
-  git -C "$profile_dir" tag "$backup_tag" HEAD 2>/dev/null
-
-  if ! git -C "$profile_dir" rm -rf --quiet . 2>/dev/null; then
-    git -C "$profile_dir" tag -d "$backup_tag" 2>/dev/null || true
-    err "Failed to clean working tree for $ref — profile unchanged"
+  local tmp_dir work_dir
+  tmp_dir="$(mktemp -d "$PROFILES_DIR/.restore-tmp.XXXXXX")" || {
+    err "Failed to create restore workspace — profile unchanged"
     exit 1
-  fi
-  if ! git -C "$profile_dir" checkout "$resolved" -- . 2>/dev/null; then
-    # Checkout failed — roll back to the safety snapshot
-    git -C "$profile_dir" checkout "$backup_tag" -- . 2>/dev/null || true
-    git -C "$profile_dir" tag -d "$backup_tag" 2>/dev/null || true
-    err "Failed to checkout $ref — restore aborted, profile rolled back"
-    exit 1
+  }
+  work_dir="$tmp_dir/work"
+  if ! _copy_profile_worktree "$profile_dir" "$work_dir"; then
+    _abort_restore_unchanged "$tmp_dir" "Failed to snapshot profile before restore"
   fi
 
-  git -C "$profile_dir" tag -d "$backup_tag" 2>/dev/null || true
-  _git_commit "$profile_dir" "Restored to $ref"
+  if ! git -C "$work_dir" rm -rf --quiet . 2>/dev/null; then
+    _abort_restore_unchanged "$tmp_dir" "Failed to clean working tree for $ref"
+  fi
+  if ! git -C "$work_dir" checkout "$resolved" -- . 2>/dev/null; then
+    _abort_restore_unchanged "$tmp_dir" "Failed to checkout $ref"
+  fi
+
+  if ! _commit_and_verify_restore "$work_dir" "$resolved" "Restored to $ref"; then
+    _abort_restore_unchanged "$tmp_dir" "Failed to verify restored tree for $ref"
+  fi
+  _replace_profile_with_restored_copy "$profile_dir" "$work_dir" "$tmp_dir"
+  rm -rf "$tmp_dir"
 
   if [[ "$(get_current)" == "$name" ]]; then
     info "Reloading active profile..."

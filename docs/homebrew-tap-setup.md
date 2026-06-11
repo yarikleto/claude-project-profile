@@ -57,7 +57,7 @@ class ClaudeProjectProfile < Formula
 
   def install
     # Install supporting modules to libexec (Homebrew's private dir for the formula)
-    libexec.install "lib", "commands"
+    libexec.install "lib", "commands", "VERSION"
 
     # Install main script and patch SCRIPT_DIR to find modules in libexec
     bin.install "claude-project-profile"
@@ -130,11 +130,11 @@ claude-project-profile version   # should print "claude-project-profile 1.0.0"
 
 ## Releasing a new version
 
-1. Update `VERSION` in `lib/config.sh` to match the new tag.
+1. Update the root `VERSION` file to match the new tag.
 
 2. Commit, tag, and push in the main repo:
    ```bash
-   git add lib/config.sh
+   git add VERSION
    git commit -m "Bump version to 1.1.0"
    git tag v1.1.0
    git push origin main --tags

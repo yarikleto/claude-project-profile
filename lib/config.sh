@@ -1,6 +1,15 @@
 # config.sh — Constants and path resolution (project-level)
 
-VERSION="1.0.1"
+_VERSION_FILE="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/VERSION"
+if [[ ! -r "$_VERSION_FILE" ]]; then
+  err "VERSION file not found at $_VERSION_FILE"
+  exit 1
+fi
+IFS= read -r VERSION < "$_VERSION_FILE"
+if [[ -z "$VERSION" ]]; then
+  err "VERSION file is empty"
+  exit 1
+fi
 
 # ─── Project root detection ────────────────────────────────
 _detect_project_root() {

@@ -35,11 +35,14 @@ load test_helper
   printf '.claude/*.json\nCLAUDE.md\n' > "$PROJECT_DIR/.claude-profiles/.include"
   run_cli save -m "dev state"
 
-  # Change files and create new profile
+  # Create a separate active profile before writing review-specific state.
+  # fork auto-saves the active profile, so writing review files while dev is
+  # active would correctly update dev before creating review.
+  run_cli new review
+  [ "$status" -eq 0 ]
   echo '{"memory": "review"}' > "$PROJECT_DIR/.claude/memory.json"
   echo '{"setting": "review"}' > "$PROJECT_DIR/.claude/settings.json"
   echo "review notes" > "$PROJECT_DIR/.claude/notes.txt"
-  run_cli fork review
   run_cli save -m "review state"
 
   # Switch back to dev

@@ -276,3 +276,60 @@ load test_helper
   [ -f "$TEST_DIR/external-dir/secret.txt" ]
   [[ "$(cat "$TEST_DIR/external-dir/secret.txt")" == "TOP SECRET DATA" ]]
 }
+
+@test "SECURITY: relative symlink fallback does not exfiltrate outside files via fork" {
+  mkdir -p "$TEST_DIR/external-dir"
+  echo "RELATIVE SECRET" > "$TEST_DIR/external-dir/secret.txt"
+  echo '{"evil": "relative"}' > "$TEST_DIR/external-dir/settings.json"
+
+  rm -rf "$PROJECT_DIR/.claude"
+  ln -s ../external-dir "$PROJECT_DIR/.claude"
+
+  local fake_bin="$TEST_DIR/fake-bin"
+  make_readlink_without_f_fake "$fake_bin"
+  make_realpath_failure_fake "$fake_bin"
+  export PATH="$fake_bin:$PATH"
+
+  run_cli fork default
+
+  [ ! -f "$PROJECT_DIR/.claude-profiles/default/secret.txt" ]
+  [ ! -f "$PROJECT_DIR/.claude-profiles/default/.claude/secret.txt" ]
+
+  if [ "$status" -eq 0 ] && [ -f "$PROJECT_DIR/.claude-profiles/default/.claude/settings.json" ]; then
+    local content
+    content="$(cat "$PROJECT_DIR/.claude-profiles/default/.claude/settings.json")"
+    [[ "$content" != *"relative"* ]]
+  fi
+
+  [ -f "$TEST_DIR/external-dir/secret.txt" ]
+  [[ "$(cat "$TEST_DIR/external-dir/secret.txt")" == "RELATIVE SECRET" ]]
+}
+
+@test "SECURITY: chained symlink fallback does not exfiltrate outside files via fork" {
+  mkdir -p "$TEST_DIR/external-dir"
+  echo "CHAINED SECRET" > "$TEST_DIR/external-dir/secret.txt"
+  echo '{"evil": "chain"}' > "$TEST_DIR/external-dir/settings.json"
+
+  rm -rf "$PROJECT_DIR/.claude"
+  ln -s inner-link "$PROJECT_DIR/.claude"
+  ln -s ../external-dir "$PROJECT_DIR/inner-link"
+
+  local fake_bin="$TEST_DIR/fake-bin"
+  make_readlink_without_f_fake "$fake_bin"
+  make_realpath_failure_fake "$fake_bin"
+  export PATH="$fake_bin:$PATH"
+
+  run_cli fork default
+
+  [ ! -f "$PROJECT_DIR/.claude-profiles/default/secret.txt" ]
+  [ ! -f "$PROJECT_DIR/.claude-profiles/default/.claude/secret.txt" ]
+
+  if [ "$status" -eq 0 ] && [ -f "$PROJECT_DIR/.claude-profiles/default/.claude/settings.json" ]; then
+    local content
+    content="$(cat "$PROJECT_DIR/.claude-profiles/default/.claude/settings.json")"
+    [[ "$content" != *"chain"* ]]
+  fi
+
+  [ -f "$TEST_DIR/external-dir/secret.txt" ]
+  [[ "$(cat "$TEST_DIR/external-dir/secret.txt")" == "CHAINED SECRET" ]]
+}
