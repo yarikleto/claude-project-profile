@@ -5,10 +5,32 @@ ensure_dir() {
   mkdir -p "$PROFILES_DIR"
 }
 
+# Non-fatal profile-name check (mirrors _validate_profile_name's whitelist).
+# Returns 0 if valid, 1 otherwise — never exits. Use for untrusted input
+# (e.g. the repo-controlled .current file) where aborting is the wrong action.
+_is_valid_profile_name() {
+  local name="$1"
+  [[ "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]] || return 1
+  [[ "$name" == *..* ]] && return 1
+  return 0
+}
+
 get_current() {
   _ensure_paths
   if [[ -f "$CURRENT_FILE" ]]; then
-    cat "$CURRENT_FILE"
+    local current
+    current="$(cat "$CURRENT_FILE")"
+    # Defensive hardening: .current lives inside the (possibly hostile) repo.
+    # Never emit a value that isn't a valid profile name — a malformed value
+    # (e.g. "../..", "a/b") must never be used to construct a path. Treat it
+    # as no active profile. The swallow is intentionally SILENT: get_current is
+    # called frequently (e.g. cmd_list loops), so warning here would spam
+    # stderr — do not add a warn.
+    if _is_valid_profile_name "$current"; then
+      echo "$current"
+    else
+      echo ""
+    fi
   else
     echo ""
   fi
@@ -98,6 +120,14 @@ _auto_save_current() {
   _ensure_paths
   local current
   current="$(get_current)"
+  # Redundant belt-and-suspenders guard: get_current()'s contract already
+  # guarantees an empty or valid name, so this branch is unreachable under
+  # normal operation. Kept purely as defense-in-depth — if reached, skip the
+  # auto-save rather than abort the command or escape PROFILES_DIR.
+  if [[ -n "$current" ]] && ! _is_valid_profile_name "$current"; then
+    warn "Ignoring malformed active profile name in .current — skipping auto-save"
+    return
+  fi
   if [[ -n "$current" && -d "$PROFILES_DIR/$current" ]]; then
     info "Saving $(_pname "$current")..."
     _save_current_to "$PROFILES_DIR/$current" "$msg" "$move"
