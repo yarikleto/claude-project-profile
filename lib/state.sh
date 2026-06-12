@@ -23,7 +23,9 @@ get_current() {
     # Defensive hardening: .current lives inside the (possibly hostile) repo.
     # Never emit a value that isn't a valid profile name — a malformed value
     # (e.g. "../..", "a/b") must never be used to construct a path. Treat it
-    # as no active profile.
+    # as no active profile. The swallow is intentionally SILENT: get_current is
+    # called frequently (e.g. cmd_list loops), so warning here would spam
+    # stderr — do not add a warn.
     if _is_valid_profile_name "$current"; then
       echo "$current"
     else
@@ -118,10 +120,10 @@ _auto_save_current() {
   _ensure_paths
   local current
   current="$(get_current)"
-  # Defense in depth: get_current already sanitizes, but re-check here so the
-  # value can never be used as a path component if either layer is bypassed.
-  # A corrupt/hostile .current must skip the auto-save, NOT abort the command
-  # or escape PROFILES_DIR.
+  # Redundant belt-and-suspenders guard: get_current()'s contract already
+  # guarantees an empty or valid name, so this branch is unreachable under
+  # normal operation. Kept purely as defense-in-depth — if reached, skip the
+  # auto-save rather than abort the command or escape PROFILES_DIR.
   if [[ -n "$current" ]] && ! _is_valid_profile_name "$current"; then
     warn "Ignoring malformed active profile name in .current — skipping auto-save"
     return
