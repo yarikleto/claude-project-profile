@@ -7,6 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Shell: Bash](https://img.shields.io/badge/Shell-Bash-4EAA25?logo=gnubash&logoColor=white)](claude-project-profile)
 [![Tests: bats](https://img.shields.io/badge/Tests-35_passing-brightgreen)](tests/)
+[![Status: Alpha](https://img.shields.io/badge/Status-Alpha-orange.svg)](#)
 
 Different tasks need different setups within the same project.<br>
 Code review needs strict `CLAUDE.md` instructions. Daily dev needs full access.<br>
@@ -18,6 +19,14 @@ Companion to [**claude-profile**](https://github.com/yarikleto/claude-profile) (
 Use both together: `claude-profile` for global `~/.claude/`, this tool for per-project `.claude/`.
 
 </div>
+
+---
+
+> [!WARNING]
+> **Alpha — under active development.** This tool is in an early, alpha stage and
+> evolving quickly. Commands, flags, and on-disk formats may change without notice,
+> and breaking changes can land between releases. Pin a version and review changes
+> before relying on it in critical workflows. Bug reports and feedback are welcome.
 
 ---
 
