@@ -136,6 +136,54 @@ load test_helper
   [ -f "$TEST_DIR/above/data.txt" ]
 }
 
+# ─── Path traversal via .current: auto-save destination escape ────────────
+
+@test "SECURITY: malformed .current (../..) does not relocate auto-save outside project" {
+  # Sentinel directory OUTSIDE the project that an attacker tries to clobber.
+  # With .current="../.." the save destination base becomes
+  # PROFILES_DIR/../.. = TEST_DIR, and an attacker-controlled .include entry
+  # naming the sentinel would cause it to be rm -rf'd and overwritten.
+  mkdir -p "$TEST_DIR/sentinel"
+  echo "PROTECTED" > "$TEST_DIR/sentinel/keep.txt"
+
+  run_cli fork default
+  [ "$status" -eq 0 ]
+
+  # Attacker ships a malicious repo state:
+  printf '../..' > "$PROJECT_DIR/.claude-profiles/.current"
+  printf '.claude/\nsentinel\n' > "$PROJECT_DIR/.claude-profiles/.include"
+
+  # cmd_new routes through _auto_save_current (with --move). It must NOT
+  # treat "../.." as a profile path and must NOT touch the sentinel.
+  run_cli new second
+
+  # The out-of-project sentinel must survive untouched.
+  [ -d "$TEST_DIR/sentinel" ]
+  [ -f "$TEST_DIR/sentinel/keep.txt" ]
+  [[ "$(cat "$TEST_DIR/sentinel/keep.txt")" == "PROTECTED" ]]
+
+  # And nothing must have been written above the profiles dir as if it were
+  # a save destination (e.g. a git history committed into TEST_DIR).
+  [ ! -d "$TEST_DIR/.git" ]
+}
+
+@test "SECURITY: malformed .current with slash is treated as no active profile" {
+  run_cli fork default
+  [ "$status" -eq 0 ]
+
+  printf 'a/b' > "$PROJECT_DIR/.claude-profiles/.current"
+
+  # save with no name defaults to get_current(); a malformed value must not
+  # be used as a path. get_current sanitizes to empty, so save errors on the
+  # empty/invalid name rather than escaping the profiles dir.
+  run_cli save -m "x"
+  [ "$status" -ne 0 ]
+
+  # No directory should have been created from the slashed value.
+  [ ! -d "$PROJECT_DIR/.claude-profiles/a" ]
+  [ ! -d "$PROJECT_DIR/.claude-profiles/a/b" ]
+}
+
 # ─── Code injection via eval in glob patterns ─────────────────────────────
 
 @test "SECURITY: command substitution in .include glob is not executed" {
